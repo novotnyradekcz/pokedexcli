@@ -3,10 +3,8 @@ package main
 import "strings"
 
 func cleanInput(text string) []string {
-	// make sure to to trim space inbetween words as well
-	// split the text into words
-	//
 	text = strings.TrimSpace(text)
+	text = strings.ToLower(text)
 	var result []string
 	for _, word := range strings.Split(text, " ") {
 		if word != "" {
