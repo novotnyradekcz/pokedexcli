@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/novotnyradekcz/pokedexcli/internal/pokeapi"
 )
 
 type config struct {
-	commands map[string]cliCommand
-	next     *string
-	previous *string
+	commands      map[string]cliCommand
+	pokeapiClient pokeapi.Client
+	next          *string
+	previous      *string
 }
 
 func startRepl(cfg *config) {
