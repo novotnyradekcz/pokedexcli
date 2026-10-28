@@ -13,6 +13,7 @@ type config struct {
 	commands      map[string]cliCommand
 	pokeapiClient pokeapi.Client
 	caughtPokemon map[string]pokeapi.Pokemon
+	caughtOrder   []string // names of caught Pokemon, in the order first caught
 	next          *string
 	previous      *string
 }
@@ -88,6 +89,11 @@ func getCommands() map[string]cliCommand {
 			name:        "inspect <pokemon_name>",
 			description: "Shows the details of a Pokemon you have caught",
 			callback:    commandInspect,
+		},
+		"pokedex": {
+			name:        "pokedex",
+			description: "Lists the Pokemon you have caught",
+			callback:    commandPokedex,
 		},
 		"exit": {
 			name:        "exit",

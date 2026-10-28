@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+
+	"github.com/novotnyradekcz/pokedexcli/internal/pokeapi"
 )
 
 // catchDifficulty controls how hard catching is. The chance of catching a
@@ -40,6 +42,16 @@ func commandCatch(cfg *config, args ...string) error {
 	}
 
 	fmt.Printf("%s was caught!\n", pokemon.Name)
-	cfg.caughtPokemon[pokemon.Name] = pokemon
+	fmt.Println("You may now inspect it with the inspect command.")
+	cfg.addCaughtPokemon(pokemon)
 	return nil
+}
+
+// addCaughtPokemon records p in the Pokedex. The order in which Pokemon were
+// first caught is remembered so the pokedex command can list them that way.
+func (cfg *config) addCaughtPokemon(p pokeapi.Pokemon) {
+	if _, already := cfg.caughtPokemon[p.Name]; !already {
+		cfg.caughtOrder = append(cfg.caughtOrder, p.Name)
+	}
+	cfg.caughtPokemon[p.Name] = p
 }
