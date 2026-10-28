@@ -31,7 +31,7 @@ type PokemonType struct {
 // GetPokemon fetches the Pokemon with the given name (or id). Responses are
 // cached by URL.
 func (c *Client) GetPokemon(name string) (Pokemon, error) {
-	pokemonURL := baseURL + "/pokemon/" + url.PathEscape(name)
+	pokemonURL := c.baseURL + "/pokemon/" + url.PathEscape(name)
 
 	var pokemon Pokemon
 	if err := c.getJSON(pokemonURL, &pokemon); err != nil {

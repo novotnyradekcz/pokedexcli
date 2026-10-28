@@ -1,4 +1,4 @@
-package main
+package repl
 
 import (
 	"bufio"
@@ -92,7 +92,7 @@ func TestHistoryIsBounded(t *testing.T) {
 }
 
 func TestScannerReaderReturnsEOF(t *testing.T) {
-	r := &scannerReader{scanner: bufio.NewScanner(strings.NewReader("one\ntwo\n"))}
+	r := &scannerReader{scanner: bufio.NewScanner(strings.NewReader("one\ntwo\n")), out: io.Discard}
 
 	for _, want := range []string{"one", "two"} {
 		got, err := r.ReadLine()

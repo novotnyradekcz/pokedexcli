@@ -10,29 +10,46 @@ import (
 	"time"
 )
 
+const testBaseURL = "https://pokeapi.test/api/v2"
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func newTestClient(requests *atomic.Int32, status int, body string) Client {
-	client := NewClient(5*time.Second, time.Minute)
-	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		requests.Add(1)
-		return &http.Response{
-			StatusCode: status,
-			Status:     http.StatusText(status),
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-			Request:    r,
-		}, nil
-	})
-	return client
+func response(r *http.Request, status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Status:     http.StatusText(status),
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+		Request:    r,
+	}
+}
+
+// newTestClient returns a client that sends every request to handler instead
+// of the network, and counts how many requests were made.
+func newTestClient(t *testing.T, handler func(*http.Request) *http.Response) (*Client, *atomic.Int32) {
+	t.Helper()
+	var requests atomic.Int32
+	client := NewClient(5*time.Second, time.Minute,
+		WithBaseURL(testBaseURL),
+		WithTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			requests.Add(1)
+			return handler(r), nil
+		})),
+	)
+	t.Cleanup(client.Close)
+	return client, &requests
+}
+
+// fixedResponse returns a handler that always answers with status and body.
+func fixedResponse(status int, body string) func(*http.Request) *http.Response {
+	return func(r *http.Request) *http.Response { return response(r, status, body) }
 }
 
 func TestListLocationAreasUsesCache(t *testing.T) {
-	var requests atomic.Int32
-	client := newTestClient(&requests, http.StatusOK,
-		`{"count":1,"next":null,"previous":null,"results":[{"name":"canalave-city-area","url":"u"}]}`)
+	client, requests := newTestClient(t, fixedResponse(http.StatusOK,
+		`{"count":1,"next":null,"previous":null,"results":[{"name":"canalave-city-area","url":"u"}]}`))
 	url := "https://example.com/location-area/"
 
 	for i := 0; i < 3; i++ {
@@ -50,29 +67,38 @@ func TestListLocationAreasUsesCache(t *testing.T) {
 	}
 }
 
+func TestListLocationAreasFirstPageURL(t *testing.T) {
+	var gotURL string
+	client, _ := newTestClient(t, func(r *http.Request) *http.Response {
+		gotURL = r.URL.String()
+		return response(r, http.StatusOK, `{"results":[]}`)
+	})
+
+	if _, err := client.ListLocationAreas(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if want := testBaseURL + "/location-area/?offset=0&limit=20"; gotURL != want {
+		t.Errorf("requested %q, want %q", gotURL, want)
+	}
+}
+
 // Mirrors the real API: page 2's Previous URL must be the same URL that was
 // used to fetch page 1, so going back is served from the cache.
 func TestPreviousPageIsServedFromCache(t *testing.T) {
-	const page2 = baseURL + "/location-area/?offset=20&limit=20"
+	const page1 = testBaseURL + "/location-area/?offset=0&limit=20"
+	const page2 = testBaseURL + "/location-area/?offset=20&limit=20"
 	pages := map[string]string{
-		firstLocationAreaURL: `{"next":"` + page2 + `","previous":null,"results":[{"name":"a"}]}`,
-		page2:                `{"next":null,"previous":"` + firstLocationAreaURL + `","results":[{"name":"b"}]}`,
+		page1: `{"next":"` + page2 + `","previous":null,"results":[{"name":"a"}]}`,
+		page2: `{"next":null,"previous":"` + page1 + `","results":[{"name":"b"}]}`,
 	}
 
-	var requests atomic.Int32
-	client := NewClient(5*time.Second, time.Minute)
-	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		requests.Add(1)
+	client, requests := newTestClient(t, func(r *http.Request) *http.Response {
 		body, ok := pages[r.URL.String()]
 		if !ok {
 			t.Errorf("unexpected request to %s", r.URL)
 		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-			Request:    r,
-		}, nil
+		return response(r, http.StatusOK, body)
 	})
 
 	first, err := client.ListLocationAreas(nil)
@@ -97,21 +123,13 @@ func TestPreviousPageIsServedFromCache(t *testing.T) {
 }
 
 func TestGetLocationAreaUsesCache(t *testing.T) {
-	var requests atomic.Int32
 	var gotURL string
-	client := NewClient(5*time.Second, time.Minute)
-	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		requests.Add(1)
+	client, requests := newTestClient(t, func(r *http.Request) *http.Response {
 		gotURL = r.URL.String()
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body: io.NopCloser(strings.NewReader(
-				`{"name":"pastoria-city-area","pokemon_encounters":[` +
-					`{"pokemon":{"name":"tentacool","url":"u1"}},` +
-					`{"pokemon":{"name":"magikarp","url":"u2"}}]}`)),
-			Header:  make(http.Header),
-			Request: r,
-		}, nil
+		return response(r, http.StatusOK,
+			`{"name":"pastoria-city-area","pokemon_encounters":[`+
+				`{"pokemon":{"name":"tentacool","url":"u1"}},`+
+				`{"pokemon":{"name":"magikarp","url":"u2"}}]}`)
 	})
 
 	for i := 0; i < 2; i++ {
@@ -126,7 +144,7 @@ func TestGetLocationAreaUsesCache(t *testing.T) {
 		}
 	}
 
-	if want := baseURL + "/location-area/pastoria-city-area"; gotURL != want {
+	if want := testBaseURL + "/location-area/pastoria-city-area"; gotURL != want {
 		t.Errorf("requested %q, want %q", gotURL, want)
 	}
 	if got := requests.Load(); got != 1 {
@@ -135,9 +153,11 @@ func TestGetLocationAreaUsesCache(t *testing.T) {
 }
 
 func TestGetPokemonUsesCache(t *testing.T) {
-	var requests atomic.Int32
-	client := newTestClient(&requests, http.StatusOK,
-		`{"id":25,"name":"pikachu","base_experience":112}`)
+	var gotURL string
+	client, requests := newTestClient(t, func(r *http.Request) *http.Response {
+		gotURL = r.URL.String()
+		return response(r, http.StatusOK, `{"id":25,"name":"pikachu","base_experience":112}`)
+	})
 
 	for i := 0; i < 2; i++ {
 		p, err := client.GetPokemon("pikachu")
@@ -149,14 +169,16 @@ func TestGetPokemonUsesCache(t *testing.T) {
 		}
 	}
 
+	if want := testBaseURL + "/pokemon/pikachu"; gotURL != want {
+		t.Errorf("requested %q, want %q", gotURL, want)
+	}
 	if got := requests.Load(); got != 1 {
 		t.Errorf("expected 1 HTTP request, got %d", got)
 	}
 }
 
 func TestGetLocationAreaNotFound(t *testing.T) {
-	var requests atomic.Int32
-	client := newTestClient(&requests, http.StatusNotFound, "Not Found")
+	client, _ := newTestClient(t, fixedResponse(http.StatusNotFound, "Not Found"))
 
 	_, err := client.GetLocationArea("nowhere")
 	var statusErr *StatusError
@@ -166,8 +188,7 @@ func TestGetLocationAreaNotFound(t *testing.T) {
 }
 
 func TestListLocationAreasDoesNotCacheErrors(t *testing.T) {
-	var requests atomic.Int32
-	client := newTestClient(&requests, http.StatusInternalServerError, "boom")
+	client, requests := newTestClient(t, fixedResponse(http.StatusInternalServerError, "boom"))
 	url := "https://example.com/location-area/"
 
 	for i := 0; i < 2; i++ {
@@ -178,5 +199,47 @@ func TestListLocationAreasDoesNotCacheErrors(t *testing.T) {
 
 	if got := requests.Load(); got != 2 {
 		t.Errorf("expected 2 HTTP requests, got %d", got)
+	}
+}
+
+func TestInvalidJSONIsNotCached(t *testing.T) {
+	client, requests := newTestClient(t, fixedResponse(http.StatusOK, "not json"))
+
+	for i := 0; i < 2; i++ {
+		if _, err := client.GetPokemon("pikachu"); err == nil {
+			t.Fatal("expected a decoding error")
+		}
+	}
+
+	if got := requests.Load(); got != 2 {
+		t.Errorf("expected 2 HTTP requests (bad bodies must not be cached), got %d", got)
+	}
+}
+
+func TestWithBaseURLTrimsTrailingSlash(t *testing.T) {
+	var gotURL string
+	client := NewClient(time.Second, time.Minute,
+		WithBaseURL("https://pokeapi.test/api/v2/"),
+		WithTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			gotURL = r.URL.String()
+			return response(r, http.StatusOK, `{}`), nil
+		})),
+	)
+	t.Cleanup(client.Close)
+
+	if _, err := client.GetPokemon("pikachu"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "https://pokeapi.test/api/v2/pokemon/pikachu"; gotURL != want {
+		t.Errorf("requested %q, want %q", gotURL, want)
+	}
+}
+
+func TestDefaultBaseURL(t *testing.T) {
+	client := NewClient(time.Second, time.Minute)
+	t.Cleanup(client.Close)
+
+	if client.baseURL != "https://pokeapi.co/api/v2" {
+		t.Errorf("baseURL = %q, want the real PokeAPI", client.baseURL)
 	}
 }

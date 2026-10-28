@@ -1,4 +1,4 @@
-package main
+package repl
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 )
 
 func commandPokedex(cfg *config, args ...string) error {
-	fmt.Print(formatPokedex(cfg.caughtOrder))
+	fmt.Fprint(cfg.out, formatPokedex(cfg.pokedex.Names()))
 	return nil
 }
 

@@ -5,26 +5,55 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/novotnyradekcz/pokedexcli/internal/pokecache"
 )
 
-const baseURL = "https://pokeapi.co/api/v2"
+const defaultBaseURL = "https://pokeapi.co/api/v2"
 
 // Client talks to the PokeAPI and caches responses by URL.
 type Client struct {
+	baseURL    string
 	httpClient http.Client
 	cache      *pokecache.Cache
 }
 
+// Option customizes a Client created by NewClient.
+type Option func(*Client)
+
+// WithBaseURL makes the client call the API at baseURL instead of the real
+// PokeAPI, for example a local test server.
+func WithBaseURL(baseURL string) Option {
+	return func(c *Client) { c.baseURL = strings.TrimRight(baseURL, "/") }
+}
+
+// WithTransport makes the client send its requests through rt instead of
+// http.DefaultTransport, for example a fake in tests.
+func WithTransport(rt http.RoundTripper) Option {
+	return func(c *Client) { c.httpClient.Transport = rt }
+}
+
 // NewClient creates a Client whose HTTP requests give up after timeout and
-// whose cached responses expire after cacheInterval.
-func NewClient(timeout, cacheInterval time.Duration) Client {
-	return Client{
+// whose cached responses expire after cacheInterval. Call Close when the
+// client is no longer needed.
+func NewClient(timeout, cacheInterval time.Duration, opts ...Option) *Client {
+	c := &Client{
+		baseURL:    defaultBaseURL,
 		httpClient: http.Client{Timeout: timeout},
 		cache:      pokecache.NewCache(cacheInterval),
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+// Close releases the resources held by the client (its cache's background
+// goroutine). The client must not be used afterwards.
+func (c *Client) Close() {
+	c.cache.Stop()
 }
 
 // get returns the body of a successful GET request to url, or the cached body

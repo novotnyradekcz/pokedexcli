@@ -16,13 +16,30 @@ type cacheEntry struct {
 type Cache struct {
 	mu      sync.Mutex
 	entries map[string]cacheEntry
+	now     func() time.Time // the clock; replaced in tests
+
+	stopOnce sync.Once
+	stop     chan struct{} // closed by Stop to end the reap loop
+	done     chan struct{} // closed by the reap loop when it has exited
 }
 
 // NewCache creates a Cache and starts a background goroutine that removes
-// entries older than interval, checking once per interval.
+// entries older than interval, checking once per interval. interval must be
+// positive. Call Stop to end the goroutine when the cache is no longer needed.
 func NewCache(interval time.Duration) *Cache {
+	return newCache(interval, time.Now)
+}
+
+func newCache(interval time.Duration, now func() time.Time) *Cache {
+	if interval <= 0 {
+		panic("pokecache: interval must be positive")
+	}
+
 	c := &Cache{
 		entries: make(map[string]cacheEntry),
+		now:     now,
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
 	}
 	go c.reapLoop(interval)
 	return c
@@ -34,7 +51,7 @@ func (c *Cache) Add(key string, val []byte) {
 	defer c.mu.Unlock()
 
 	c.entries[key] = cacheEntry{
-		createdAt: time.Now(),
+		createdAt: c.now(),
 		val:       val,
 	}
 }
@@ -51,12 +68,27 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	return entry.val, true
 }
 
+// Stop ends the background reap loop and waits for it to exit. Entries remain
+// readable afterwards but are no longer removed. It is safe to call Stop more
+// than once.
+func (c *Cache) Stop() {
+	c.stopOnce.Do(func() { close(c.stop) })
+	<-c.done
+}
+
 func (c *Cache) reapLoop(interval time.Duration) {
+	defer close(c.done)
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		c.reap(time.Now(), interval)
+	for {
+		select {
+		case <-ticker.C:
+			c.reap(c.now(), interval)
+		case <-c.stop:
+			return
+		}
 	}
 }
 

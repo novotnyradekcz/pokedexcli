@@ -1,4 +1,4 @@
-package main
+package repl
 
 import (
 	"errors"
@@ -13,13 +13,13 @@ func commandInspect(cfg *config, args ...string) error {
 		return errors.New("usage: inspect <pokemon_name>")
 	}
 
-	pokemon, ok := cfg.caughtPokemon[args[0]]
+	pokemon, ok := cfg.pokedex.Get(args[0])
 	if !ok {
-		fmt.Println("you have not caught that pokemon")
+		fmt.Fprintln(cfg.out, "you have not caught that pokemon")
 		return nil
 	}
 
-	fmt.Print(formatPokemon(pokemon))
+	fmt.Fprint(cfg.out, formatPokemon(pokemon))
 	return nil
 }
 

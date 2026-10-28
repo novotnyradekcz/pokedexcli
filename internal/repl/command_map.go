@@ -1,11 +1,11 @@
-package main
+package repl
 
 import "fmt"
 
 func commandMap(cfg *config, args ...string) error {
 	if cfg.next == nil && cfg.previous != nil {
 		// A previous page exists but there is no next one: we are at the end.
-		fmt.Println("you're on the last page")
+		fmt.Fprintln(cfg.out, "you're on the last page")
 		return nil
 	}
 
@@ -14,7 +14,7 @@ func commandMap(cfg *config, args ...string) error {
 
 func commandMapb(cfg *config, args ...string) error {
 	if cfg.previous == nil {
-		fmt.Println("you're on the first page")
+		fmt.Fprintln(cfg.out, "you're on the first page")
 		return nil
 	}
 
@@ -31,7 +31,7 @@ func printLocationAreas(cfg *config, pageURL *string) error {
 	cfg.previous = list.Previous
 
 	for _, area := range list.Results {
-		fmt.Println(area.Name)
+		fmt.Fprintln(cfg.out, area.Name)
 	}
 	return nil
 }

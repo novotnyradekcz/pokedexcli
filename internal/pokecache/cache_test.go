@@ -7,6 +7,41 @@ import (
 	"time"
 )
 
+// fakeClock is a manually advanced clock, safe for use from several goroutines.
+type fakeClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func newFakeClock() *fakeClock {
+	return &fakeClock{now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+// eventually polls cond until it is true, failing the test after a generous
+// deadline. Polling keeps the tests fast without depending on exact timing.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for: %s", what)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestAddGet(t *testing.T) {
 	const interval = 5 * time.Second
 	cases := []struct {
@@ -20,6 +55,7 @@ func TestAddGet(t *testing.T) {
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("Test case %v", i), func(t *testing.T) {
 			cache := NewCache(interval)
+			t.Cleanup(cache.Stop)
 			cache.Add(c.key, c.val)
 
 			val, ok := cache.Get(c.key)
@@ -35,31 +71,78 @@ func TestAddGet(t *testing.T) {
 
 func TestGetMissing(t *testing.T) {
 	cache := NewCache(5 * time.Second)
+	t.Cleanup(cache.Stop)
+
 	if _, ok := cache.Get("missing"); ok {
 		t.Error("expected missing key to not be found")
 	}
 }
 
-func TestReapLoop(t *testing.T) {
-	const baseTime = 5 * time.Millisecond
-	const waitTime = baseTime + 10*time.Millisecond
+func TestNewCachePanicsOnNonPositiveInterval(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("expected NewCache(0) to panic")
+		}
+	}()
+	NewCache(0)
+}
 
-	cache := NewCache(baseTime)
-	cache.Add("https://example.com", []byte("testdata"))
+func TestReapLoopRemovesOnlyExpiredEntries(t *testing.T) {
+	// The interval is both the tick period and the maximum entry age. Whether
+	// an entry is expired is decided by the fake clock, never by real time.
+	clock := newFakeClock()
+	cache := newCache(time.Millisecond, clock.Now)
+	t.Cleanup(cache.Stop)
 
-	if _, ok := cache.Get("https://example.com"); !ok {
-		t.Fatal("expected to find key right after adding it")
-	}
+	cache.Add("old", []byte("1"))
+	clock.Advance(10 * time.Millisecond) // "old" is now older than the interval
+	cache.Add("fresh", []byte("2"))      // created at the new time, so not expired
 
-	time.Sleep(waitTime)
-
-	if _, ok := cache.Get("https://example.com"); ok {
-		t.Error("expected key to have been reaped")
+	eventually(t, "old entry to be reaped", func() bool {
+		_, ok := cache.Get("old")
+		return !ok
+	})
+	if _, ok := cache.Get("fresh"); !ok {
+		t.Error("expected the fresh entry to still be cached")
 	}
 }
 
+func TestReapLoopKeepsEntriesWhileClockStandsStill(t *testing.T) {
+	clock := newFakeClock()
+	cache := newCache(time.Millisecond, clock.Now)
+	t.Cleanup(cache.Stop)
+
+	cache.Add("key", []byte("val"))
+	time.Sleep(20 * time.Millisecond) // many ticks, but no time passes on the fake clock
+
+	if _, ok := cache.Get("key"); !ok {
+		t.Error("expected entry to survive while the clock has not advanced")
+	}
+}
+
+func TestStopEndsReaping(t *testing.T) {
+	clock := newFakeClock()
+	cache := newCache(time.Millisecond, clock.Now)
+
+	cache.Add("key", []byte("val"))
+	cache.Stop() // returns only once the reap loop has exited
+
+	clock.Advance(time.Hour)
+	time.Sleep(20 * time.Millisecond) // plenty of ticks, if the loop were still running
+
+	if _, ok := cache.Get("key"); !ok {
+		t.Error("expected no reaping after Stop")
+	}
+}
+
+func TestStopIsIdempotent(t *testing.T) {
+	cache := NewCache(time.Second)
+	cache.Stop()
+	cache.Stop()
+}
+
 func TestReapKeepsFreshEntries(t *testing.T) {
-	cache := &Cache{entries: make(map[string]cacheEntry)}
+	cache := &Cache{entries: make(map[string]cacheEntry), now: time.Now}
 	cache.Add("fresh", []byte("a"))
 	cache.entries["stale"] = cacheEntry{
 		createdAt: time.Now().Add(-time.Minute),
@@ -78,6 +161,7 @@ func TestReapKeepsFreshEntries(t *testing.T) {
 
 func TestConcurrentAccess(t *testing.T) {
 	cache := NewCache(time.Millisecond)
+	t.Cleanup(cache.Stop)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {

@@ -1,4 +1,4 @@
-package main
+package repl
 
 import (
 	"bufio"
@@ -22,7 +22,7 @@ type lineReader interface {
 
 // newLineReader returns a reader with arrow-key history when stdin and stdout
 // are a terminal, and a plain line reader otherwise (e.g. piped input).
-func newLineReader() lineReader {
+func newLineReader(out io.Writer) lineReader {
 	stdin := int(os.Stdin.Fd())
 	if term.IsTerminal(stdin) && term.IsTerminal(int(os.Stdout.Fd())) {
 		return &terminalReader{
@@ -33,7 +33,7 @@ func newLineReader() lineReader {
 			}{os.Stdin, os.Stdout}),
 		}
 	}
-	return &scannerReader{scanner: bufio.NewScanner(os.Stdin)}
+	return &scannerReader{scanner: bufio.NewScanner(os.Stdin), out: out}
 }
 
 // newTerminal builds a line editor on rw. Up/down arrows cycle through the
@@ -70,10 +70,11 @@ func (r *terminalReader) ReadLine() (string, error) {
 // itself.
 type scannerReader struct {
 	scanner *bufio.Scanner
+	out     io.Writer
 }
 
 func (r *scannerReader) ReadLine() (string, error) {
-	fmt.Print(prompt)
+	fmt.Fprint(r.out, prompt)
 	if !r.scanner.Scan() {
 		if err := r.scanner.Err(); err != nil {
 			return "", err

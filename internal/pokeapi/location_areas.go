@@ -8,7 +8,9 @@ import (
 // firstLocationAreaURL is spelled the same way the API spells the Previous
 // URL of the second page, so the first page shares a cache entry whether it is
 // reached via map or via mapb.
-const firstLocationAreaURL = baseURL + "/location-area/?offset=0&limit=20"
+func (c *Client) firstLocationAreaURL() string {
+	return c.baseURL + "/location-area/?offset=0&limit=20"
+}
 
 // LocationAreaList is one page of results from the location-area endpoint.
 // Next and Previous are nil when there is no page in that direction.
@@ -43,7 +45,7 @@ type PokemonEncounter struct {
 // first page is returned; otherwise pageURL (a Next or Previous URL from an
 // earlier response) is fetched. Responses are cached by URL.
 func (c *Client) ListLocationAreas(pageURL *string) (LocationAreaList, error) {
-	url := firstLocationAreaURL
+	url := c.firstLocationAreaURL()
 	if pageURL != nil {
 		url = *pageURL
 	}
@@ -58,7 +60,7 @@ func (c *Client) ListLocationAreas(pageURL *string) (LocationAreaList, error) {
 // GetLocationArea fetches the details of the location area with the given
 // name (or id). Responses are cached by URL.
 func (c *Client) GetLocationArea(name string) (LocationAreaDetail, error) {
-	areaURL := baseURL + "/location-area/" + url.PathEscape(name)
+	areaURL := c.baseURL + "/location-area/" + url.PathEscape(name)
 
 	var detail LocationAreaDetail
 	if err := c.getJSON(areaURL, &detail); err != nil {

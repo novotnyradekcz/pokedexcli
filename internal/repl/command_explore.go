@@ -1,4 +1,4 @@
-package main
+package repl
 
 import (
 	"errors"
@@ -11,15 +11,15 @@ func commandExplore(cfg *config, args ...string) error {
 	}
 	name := args[0]
 
-	fmt.Printf("Exploring %s...\n", name)
+	fmt.Fprintf(cfg.out, "Exploring %s...\n", name)
 	area, err := cfg.pokeapiClient.GetLocationArea(name)
 	if err != nil {
 		return describeAPIError(err, "location area", name)
 	}
 
-	fmt.Println("Found Pokemon:")
+	fmt.Fprintln(cfg.out, "Found Pokemon:")
 	for _, encounter := range area.PokemonEncounters {
-		fmt.Printf(" - %s\n", encounter.Pokemon.Name)
+		fmt.Fprintf(cfg.out, " - %s\n", encounter.Pokemon.Name)
 	}
 	return nil
 }
