@@ -134,6 +134,26 @@ func TestGetLocationAreaUsesCache(t *testing.T) {
 	}
 }
 
+func TestGetPokemonUsesCache(t *testing.T) {
+	var requests atomic.Int32
+	client := newTestClient(&requests, http.StatusOK,
+		`{"id":25,"name":"pikachu","base_experience":112}`)
+
+	for i := 0; i < 2; i++ {
+		p, err := client.GetPokemon("pikachu")
+		if err != nil {
+			t.Fatalf("call %d: unexpected error: %v", i, err)
+		}
+		if p.Name != "pikachu" || p.BaseExperience != 112 {
+			t.Fatalf("call %d: unexpected pokemon: %+v", i, p)
+		}
+	}
+
+	if got := requests.Load(); got != 1 {
+		t.Errorf("expected 1 HTTP request, got %d", got)
+	}
+}
+
 func TestGetLocationAreaNotFound(t *testing.T) {
 	var requests atomic.Int32
 	client := newTestClient(&requests, http.StatusNotFound, "Not Found")

@@ -3,9 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"net/http"
-
-	"github.com/novotnyradekcz/pokedexcli/internal/pokeapi"
 )
 
 func commandExplore(cfg *config, args ...string) error {
@@ -17,11 +14,7 @@ func commandExplore(cfg *config, args ...string) error {
 	fmt.Printf("Exploring %s...\n", name)
 	area, err := cfg.pokeapiClient.GetLocationArea(name)
 	if err != nil {
-		var statusErr *pokeapi.StatusError
-		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
-			return fmt.Errorf("location area %q not found", name)
-		}
-		return err
+		return describeAPIError(err, "location area", name)
 	}
 
 	fmt.Println("Found Pokemon:")
