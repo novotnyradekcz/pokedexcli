@@ -1,9 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 
 	"github.com/novotnyradekcz/pokedexcli/internal/pokeapi"
@@ -19,12 +18,19 @@ type config struct {
 }
 
 func startRepl(cfg *config) {
-	reader := bufio.NewScanner(os.Stdin)
+	reader := newLineReader()
 	for {
-		fmt.Print("Pokedex > ")
-		reader.Scan()
+		line, err := reader.ReadLine()
+		if err != nil {
+			// End of input (Ctrl-D / Ctrl-C, or piped input ran out).
+			fmt.Println()
+			if err != io.EOF {
+				fmt.Println(err)
+			}
+			return
+		}
 
-		words := cleanInput(reader.Text())
+		words := cleanInput(line)
 		if len(words) == 0 {
 			continue
 		}
