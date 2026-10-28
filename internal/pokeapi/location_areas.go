@@ -2,9 +2,7 @@ package pokeapi
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
+	"net/url"
 )
 
 // firstLocationAreaURL is spelled the same way the API spells the Previous
@@ -27,6 +25,20 @@ type LocationArea struct {
 	URL  string `json:"url"`
 }
 
+// LocationAreaDetail is the full description of a single location area.
+type LocationAreaDetail struct {
+	Name              string             `json:"name"`
+	PokemonEncounters []PokemonEncounter `json:"pokemon_encounters"`
+}
+
+// PokemonEncounter links a Pokemon to the location area it can be found in.
+type PokemonEncounter struct {
+	Pokemon struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"pokemon"`
+}
+
 // ListLocationAreas fetches a page of location areas. If pageURL is nil, the
 // first page is returned; otherwise pageURL (a Next or Previous URL from an
 // earlier response) is fetched. Responses are cached by URL.
@@ -36,39 +48,39 @@ func (c *Client) ListLocationAreas(pageURL *string) (LocationAreaList, error) {
 		url = *pageURL
 	}
 
-	if body, ok := c.cache.Get(url); ok {
-		return decodeLocationAreaList(body)
-	}
-
-	res, err := c.httpClient.Get(url)
-	if err != nil {
+	var list LocationAreaList
+	if err := c.getJSON(url, &list); err != nil {
 		return LocationAreaList{}, err
 	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		return LocationAreaList{}, fmt.Errorf("unexpected response status: %s", res.Status)
-	}
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return LocationAreaList{}, err
-	}
-
-	list, err := decodeLocationAreaList(body)
-	if err != nil {
-		return LocationAreaList{}, err
-	}
-
-	// Only cache responses that decoded successfully.
-	c.cache.Add(url, body)
 	return list, nil
 }
 
-func decodeLocationAreaList(body []byte) (LocationAreaList, error) {
-	var list LocationAreaList
-	if err := json.Unmarshal(body, &list); err != nil {
-		return LocationAreaList{}, err
+// GetLocationArea fetches the details of the location area with the given
+// name (or id). Responses are cached by URL.
+func (c *Client) GetLocationArea(name string) (LocationAreaDetail, error) {
+	areaURL := baseURL + "/location-area/" + url.PathEscape(name)
+
+	var detail LocationAreaDetail
+	if err := c.getJSON(areaURL, &detail); err != nil {
+		return LocationAreaDetail{}, err
 	}
-	return list, nil
+	return detail, nil
+}
+
+// getJSON GETs url (using the cache) and decodes the JSON body into v. The
+// body is cached only after it has decoded successfully.
+func (c *Client) getJSON(url string, v any) error {
+	body, cached, err := c.get(url)
+	if err != nil {
+		return err
+	}
+
+	if err := json.Unmarshal(body, v); err != nil {
+		return err
+	}
+
+	if !cached {
+		c.cache.Add(url, body)
+	}
+	return nil
 }

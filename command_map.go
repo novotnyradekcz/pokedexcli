@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-func commandMap(cfg *config) error {
+func commandMap(cfg *config, args ...string) error {
 	if cfg.next == nil && cfg.previous != nil {
 		// A previous page exists but there is no next one: we are at the end.
 		fmt.Println("you're on the last page")
@@ -12,7 +12,7 @@ func commandMap(cfg *config) error {
 	return printLocationAreas(cfg, cfg.next)
 }
 
-func commandMapb(cfg *config) error {
+func commandMapb(cfg *config, args ...string) error {
 	if cfg.previous == nil {
 		fmt.Println("you're on the first page")
 		return nil

@@ -1,6 +1,7 @@
 package pokeapi
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -92,6 +93,55 @@ func TestPreviousPageIsServedFromCache(t *testing.T) {
 	}
 	if got := requests.Load(); got != 2 {
 		t.Errorf("expected 2 HTTP requests (going back should hit the cache), got %d", got)
+	}
+}
+
+func TestGetLocationAreaUsesCache(t *testing.T) {
+	var requests atomic.Int32
+	var gotURL string
+	client := NewClient(5*time.Second, time.Minute)
+	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		gotURL = r.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(
+				`{"name":"pastoria-city-area","pokemon_encounters":[` +
+					`{"pokemon":{"name":"tentacool","url":"u1"}},` +
+					`{"pokemon":{"name":"magikarp","url":"u2"}}]}`)),
+			Header:  make(http.Header),
+			Request: r,
+		}, nil
+	})
+
+	for i := 0; i < 2; i++ {
+		area, err := client.GetLocationArea("pastoria-city-area")
+		if err != nil {
+			t.Fatalf("call %d: unexpected error: %v", i, err)
+		}
+		if len(area.PokemonEncounters) != 2 ||
+			area.PokemonEncounters[0].Pokemon.Name != "tentacool" ||
+			area.PokemonEncounters[1].Pokemon.Name != "magikarp" {
+			t.Fatalf("call %d: unexpected encounters: %+v", i, area.PokemonEncounters)
+		}
+	}
+
+	if want := baseURL + "/location-area/pastoria-city-area"; gotURL != want {
+		t.Errorf("requested %q, want %q", gotURL, want)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Errorf("expected 1 HTTP request, got %d", got)
+	}
+}
+
+func TestGetLocationAreaNotFound(t *testing.T) {
+	var requests atomic.Int32
+	client := newTestClient(&requests, http.StatusNotFound, "Not Found")
+
+	_, err := client.GetLocationArea("nowhere")
+	var statusErr *StatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected a 404 StatusError, got %v", err)
 	}
 }
 
