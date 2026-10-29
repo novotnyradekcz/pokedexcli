@@ -156,7 +156,9 @@ func TestGetPokemonUsesCache(t *testing.T) {
 	var gotURL string
 	client, requests := newTestClient(t, func(r *http.Request) *http.Response {
 		gotURL = r.URL.String()
-		return response(r, http.StatusOK, `{"id":25,"name":"pikachu","base_experience":112}`)
+		return response(r, http.StatusOK, `{"id":25,"name":"pikachu","base_experience":112,"height":4,"weight":60,`+
+			`"stats":[{"base_stat":35,"stat":{"name":"hp"}},{"base_stat":55,"stat":{"name":"attack"}}],`+
+			`"types":[{"type":{"name":"electric"}}]}`)
 	})
 
 	for i := 0; i < 2; i++ {
@@ -164,8 +166,15 @@ func TestGetPokemonUsesCache(t *testing.T) {
 		if err != nil {
 			t.Fatalf("call %d: unexpected error: %v", i, err)
 		}
-		if p.Name != "pikachu" || p.BaseExperience != 112 {
-			t.Fatalf("call %d: unexpected pokemon: %+v", i, p)
+		if p.ID != 25 || p.Name != "pikachu" || p.BaseExperience != 112 || p.Height != 4 || p.Weight != 60 {
+			t.Errorf("call %d: unexpected Pokemon fields: %+v", i, p)
+		}
+		if len(p.Stats) != 2 || p.Stats[0].BaseStat != 35 || p.Stats[0].Stat.Name != "hp" ||
+			p.Stats[1].BaseStat != 55 || p.Stats[1].Stat.Name != "attack" {
+			t.Errorf("call %d: unexpected stats: %+v", i, p.Stats)
+		}
+		if len(p.Types) != 1 || p.Types[0].Type.Name != "electric" {
+			t.Errorf("call %d: unexpected types: %+v", i, p.Types)
 		}
 	}
 

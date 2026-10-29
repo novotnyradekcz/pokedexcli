@@ -245,8 +245,8 @@ func TestCatchUsage(t *testing.T) {
 }
 
 func TestCatchUsesTheCatchChance(t *testing.T) {
-	// pikachu (base experience 112) has a ~57% chance: a roll just under
-	// catches it, a roll just over lets it escape.
+	// pikachu (base experience 112) has a ~57% chance. Rolls below it
+	// catch; a roll equal to or above it lets the Pokemon escape.
 	chance := catchChance(112)
 
 	for _, c := range []struct {
@@ -254,6 +254,7 @@ func TestCatchUsesTheCatchChance(t *testing.T) {
 		caught bool
 	}{
 		{chance - 0.01, true},
+		{chance, false},
 		{chance + 0.01, false},
 	} {
 		cfg, _ := newTestConfig(newFakeAPI())
