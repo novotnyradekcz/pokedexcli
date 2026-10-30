@@ -1,6 +1,9 @@
 package pokeapi
 
-import "net/url"
+import (
+	"context"
+	"net/url"
+)
 
 // Pokemon is the subset of the pokemon endpoint's data that the Pokedex uses.
 type Pokemon struct {
@@ -30,11 +33,11 @@ type PokemonType struct {
 
 // GetPokemon fetches the Pokemon with the given name (or id). Responses are
 // cached by URL.
-func (c *Client) GetPokemon(name string) (Pokemon, error) {
+func (c *Client) GetPokemon(ctx context.Context, name string) (Pokemon, error) {
 	pokemonURL := c.baseURL + "/pokemon/" + url.PathEscape(name)
 
 	var pokemon Pokemon
-	if err := c.getJSON(pokemonURL, &pokemon); err != nil {
+	if err := c.getJSON(ctx, pokemonURL, &pokemon); err != nil {
 		return Pokemon{}, err
 	}
 	return pokemon, nil

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"time"
 
 	"github.com/novotnyradekcz/pokedexcli/internal/pokeapi"
@@ -11,5 +12,5 @@ func main() {
 	client := pokeapi.NewClient(5*time.Second, 5*time.Minute)
 	defer client.Close()
 
-	repl.Run(client)
+	repl.Run(context.Background(), client)
 }

@@ -2,6 +2,7 @@ package repl
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -50,14 +51,20 @@ type terminalReader struct {
 	t  *term.Terminal
 }
 
-func (r *terminalReader) ReadLine() (string, error) {
+// ReadLine blocks until the user enters a line. Blocking terminal input
+// cannot be cancelled with a context; Ctrl-C and Ctrl-D end it with io.EOF.
+func (r *terminalReader) ReadLine() (line string, err error) {
 	// Raw mode is only needed while editing a line. Leaving it on would break
 	// the output of commands, which print plain "\n" line endings.
 	oldState, err := term.MakeRaw(r.fd)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("enabling raw terminal mode: %w", err)
 	}
-	defer term.Restore(r.fd, oldState)
+	defer func() {
+		if restoreErr := term.Restore(r.fd, oldState); restoreErr != nil {
+			err = errors.Join(err, fmt.Errorf("restoring terminal mode: %w", restoreErr))
+		}
+	}()
 
 	// Some terminals report a 0x0 size; keep the default size in that case.
 	if width, height, err := term.GetSize(r.fd); err == nil && width > 0 && height > 0 {

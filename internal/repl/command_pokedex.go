@@ -1,11 +1,12 @@
 package repl
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
 
-func commandPokedex(cfg *config, args ...string) error {
+func commandPokedex(_ context.Context, cfg *config, args ...string) error {
 	fmt.Fprint(cfg.out, formatPokedex(cfg.pokedex.Names()))
 	return nil
 }

@@ -24,8 +24,9 @@ type Cache struct {
 }
 
 // NewCache creates a Cache and starts a background goroutine that removes
-// entries older than interval, checking once per interval. interval must be
-// positive. Call Stop to end the goroutine when the cache is no longer needed.
+// entries older than interval, checking once per interval. It panics if
+// interval is not positive. Call Stop to end the goroutine when the cache is no
+// longer needed.
 func NewCache(interval time.Duration) *Cache {
 	return newCache(interval, time.Now)
 }

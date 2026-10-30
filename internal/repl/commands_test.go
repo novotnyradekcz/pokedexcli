@@ -2,6 +2,7 @@ package repl
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,13 +18,32 @@ type fakeAPI struct {
 	areas   map[string]pokeapi.LocationAreaDetail
 	pokemon map[string]pokeapi.Pokemon
 	calls   []string
+
+	err      error // if set, every call fails with it
+	ctxValue any   // the ctxKey value found in the context of the latest call
+}
+
+// ctxKey is the context key tests use to check that a context reaches the API.
+type ctxKey struct{}
+
+// fail returns the error a call should fail with: ctx's error if it has been
+// cancelled, otherwise the configured err (nil by default).
+func (f *fakeAPI) fail(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.err
 }
 
 func notFound() error {
 	return &pokeapi.StatusError{StatusCode: 404, Status: "404 Not Found"}
 }
 
-func (f *fakeAPI) ListLocationAreas(pageURL *string) (pokeapi.LocationAreaList, error) {
+func (f *fakeAPI) ListLocationAreas(ctx context.Context, pageURL *string) (pokeapi.LocationAreaList, error) {
+	f.ctxValue = ctx.Value(ctxKey{})
+	if err := f.fail(ctx); err != nil {
+		return pokeapi.LocationAreaList{}, err
+	}
 	url := "page1"
 	if pageURL != nil {
 		url = *pageURL
@@ -35,7 +55,11 @@ func (f *fakeAPI) ListLocationAreas(pageURL *string) (pokeapi.LocationAreaList, 
 	return pokeapi.LocationAreaList{}, notFound()
 }
 
-func (f *fakeAPI) GetLocationArea(name string) (pokeapi.LocationAreaDetail, error) {
+func (f *fakeAPI) GetLocationArea(ctx context.Context, name string) (pokeapi.LocationAreaDetail, error) {
+	f.ctxValue = ctx.Value(ctxKey{})
+	if err := f.fail(ctx); err != nil {
+		return pokeapi.LocationAreaDetail{}, err
+	}
 	f.calls = append(f.calls, "area "+name)
 	if area, ok := f.areas[name]; ok {
 		return area, nil
@@ -43,7 +67,11 @@ func (f *fakeAPI) GetLocationArea(name string) (pokeapi.LocationAreaDetail, erro
 	return pokeapi.LocationAreaDetail{}, notFound()
 }
 
-func (f *fakeAPI) GetPokemon(name string) (pokeapi.Pokemon, error) {
+func (f *fakeAPI) GetPokemon(ctx context.Context, name string) (pokeapi.Pokemon, error) {
+	f.ctxValue = ctx.Value(ctxKey{})
+	if err := f.fail(ctx); err != nil {
+		return pokeapi.Pokemon{}, err
+	}
 	f.calls = append(f.calls, "pokemon "+name)
 	if p, ok := f.pokemon[name]; ok {
 		return p, nil
@@ -110,7 +138,7 @@ func run(t *testing.T, cfg *config, line string) error {
 	if !ok {
 		t.Fatalf("unknown command %q", words[0])
 	}
-	return cmd.callback(cfg, words[1:]...)
+	return cmd.callback(t.Context(), cfg, words[1:]...)
 }
 
 // take returns what has been printed so far and clears the buffer.

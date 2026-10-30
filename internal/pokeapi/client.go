@@ -2,6 +2,7 @@
 package pokeapi
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,18 +58,26 @@ func (c *Client) Close() {
 }
 
 // get returns the body of a successful GET request to url, or the cached body
-// (with cached == true) without making a request. Bodies fetched from the
+// (with cached == true) without making a request. Cancelling ctx aborts a
+// request that is in flight. Bodies fetched from the
 // network are not cached here; callers add them to the cache once they have
 // confirmed the body is valid, so bad responses are never cached.
-func (c *Client) get(url string) (body []byte, cached bool, err error) {
+func (c *Client) get(ctx context.Context, url string) (body []byte, cached bool, err error) {
 	if body, ok := c.cache.Get(url); ok {
 		return body, true, nil
 	}
 
-	res, err := c.httpClient.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("creating request: %w", err)
+	}
+
+	// The error from Do already names the method and URL.
+	res, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, false, err
 	}
+	// Closing a fully read (or rejected) response body cannot lose data.
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
@@ -77,7 +86,7 @@ func (c *Client) get(url string) (body []byte, cached bool, err error) {
 
 	body, err = io.ReadAll(res.Body)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("reading response from %s: %w", url, err)
 	}
 	return body, false, nil
 }

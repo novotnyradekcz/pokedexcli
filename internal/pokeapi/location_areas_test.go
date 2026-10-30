@@ -1,6 +1,7 @@
 package pokeapi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -53,7 +54,7 @@ func TestListLocationAreasUsesCache(t *testing.T) {
 	url := "https://example.com/location-area/"
 
 	for i := 0; i < 3; i++ {
-		list, err := client.ListLocationAreas(&url)
+		list, err := client.ListLocationAreas(t.Context(), &url)
 		if err != nil {
 			t.Fatalf("request %d: unexpected error: %v", i, err)
 		}
@@ -74,7 +75,7 @@ func TestListLocationAreasFirstPageURL(t *testing.T) {
 		return response(r, http.StatusOK, `{"results":[]}`)
 	})
 
-	if _, err := client.ListLocationAreas(nil); err != nil {
+	if _, err := client.ListLocationAreas(t.Context(), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -101,15 +102,15 @@ func TestPreviousPageIsServedFromCache(t *testing.T) {
 		return response(r, http.StatusOK, body)
 	})
 
-	first, err := client.ListLocationAreas(nil)
+	first, err := client.ListLocationAreas(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := client.ListLocationAreas(first.Next)
+	second, err := client.ListLocationAreas(t.Context(), first.Next)
 	if err != nil {
 		t.Fatal(err)
 	}
-	back, err := client.ListLocationAreas(second.Previous)
+	back, err := client.ListLocationAreas(t.Context(), second.Previous)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +134,7 @@ func TestGetLocationAreaUsesCache(t *testing.T) {
 	})
 
 	for i := 0; i < 2; i++ {
-		area, err := client.GetLocationArea("pastoria-city-area")
+		area, err := client.GetLocationArea(t.Context(), "pastoria-city-area")
 		if err != nil {
 			t.Fatalf("call %d: unexpected error: %v", i, err)
 		}
@@ -162,7 +163,7 @@ func TestGetPokemonUsesCache(t *testing.T) {
 	})
 
 	for i := 0; i < 2; i++ {
-		p, err := client.GetPokemon("pikachu")
+		p, err := client.GetPokemon(t.Context(), "pikachu")
 		if err != nil {
 			t.Fatalf("call %d: unexpected error: %v", i, err)
 		}
@@ -189,7 +190,7 @@ func TestGetPokemonUsesCache(t *testing.T) {
 func TestGetLocationAreaNotFound(t *testing.T) {
 	client, _ := newTestClient(t, fixedResponse(http.StatusNotFound, "Not Found"))
 
-	_, err := client.GetLocationArea("nowhere")
+	_, err := client.GetLocationArea(t.Context(), "nowhere")
 	var statusErr *StatusError
 	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected a 404 StatusError, got %v", err)
@@ -201,7 +202,7 @@ func TestListLocationAreasDoesNotCacheErrors(t *testing.T) {
 	url := "https://example.com/location-area/"
 
 	for i := 0; i < 2; i++ {
-		if _, err := client.ListLocationAreas(&url); err == nil {
+		if _, err := client.ListLocationAreas(t.Context(), &url); err == nil {
 			t.Fatal("expected an error for a 500 response")
 		}
 	}
@@ -215,13 +216,74 @@ func TestInvalidJSONIsNotCached(t *testing.T) {
 	client, requests := newTestClient(t, fixedResponse(http.StatusOK, "not json"))
 
 	for i := 0; i < 2; i++ {
-		if _, err := client.GetPokemon("pikachu"); err == nil {
+		if _, err := client.GetPokemon(t.Context(), "pikachu"); err == nil {
 			t.Fatal("expected a decoding error")
 		}
 	}
 
 	if got := requests.Load(); got != 2 {
 		t.Errorf("expected 2 HTTP requests (bad bodies must not be cached), got %d", got)
+	}
+}
+
+// A request that never answers must be abandoned as soon as its context is
+// cancelled, and the failure must not be cached.
+func TestCancelledContextAbortsRequest(t *testing.T) {
+	started := make(chan struct{})
+	var requests atomic.Int32
+	client := NewClient(time.Minute, time.Minute,
+		WithBaseURL(testBaseURL),
+		WithTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			requests.Add(1)
+			close(started)
+			<-r.Context().Done() // block until the caller gives up
+			return nil, r.Context().Err()
+		})),
+	)
+	t.Cleanup(client.Close)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	errc := make(chan error, 1)
+	go func() { // ends when GetPokemon returns, which cancel() below forces
+		_, err := client.GetPokemon(ctx, "pikachu")
+		errc <- err
+	}()
+
+	<-started
+	cancel()
+
+	select {
+	case err := <-errc:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("GetPokemon did not return after its context was cancelled")
+	}
+
+	// The failed request must not have left anything in the cache.
+	if _, ok := client.cache.Get(testBaseURL + "/pokemon/pikachu"); ok {
+		t.Error("a cancelled request must not be cached")
+	}
+}
+
+func TestCachedResponseDoesNotNeedAliveContext(t *testing.T) {
+	client, requests := newTestClient(t, fixedResponse(http.StatusOK, `{"name":"pikachu"}`))
+
+	if _, err := client.GetPokemon(t.Context(), "pikachu"); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	p, err := client.GetPokemon(ctx, "pikachu")
+	if err != nil || p.Name != "pikachu" {
+		t.Errorf("GetPokemon = %+v, %v; want the cached Pokemon", p, err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Errorf("expected 1 HTTP request, got %d", got)
 	}
 }
 
@@ -236,7 +298,7 @@ func TestWithBaseURLTrimsTrailingSlash(t *testing.T) {
 	)
 	t.Cleanup(client.Close)
 
-	if _, err := client.GetPokemon("pikachu"); err != nil {
+	if _, err := client.GetPokemon(t.Context(), "pikachu"); err != nil {
 		t.Fatal(err)
 	}
 	if want := "https://pokeapi.test/api/v2/pokemon/pikachu"; gotURL != want {

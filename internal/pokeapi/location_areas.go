@@ -1,7 +1,9 @@
 package pokeapi
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 )
 
@@ -44,14 +46,14 @@ type PokemonEncounter struct {
 // ListLocationAreas fetches a page of location areas. If pageURL is nil, the
 // first page is returned; otherwise pageURL (a Next or Previous URL from an
 // earlier response) is fetched. Responses are cached by URL.
-func (c *Client) ListLocationAreas(pageURL *string) (LocationAreaList, error) {
+func (c *Client) ListLocationAreas(ctx context.Context, pageURL *string) (LocationAreaList, error) {
 	url := c.firstLocationAreaURL()
 	if pageURL != nil {
 		url = *pageURL
 	}
 
 	var list LocationAreaList
-	if err := c.getJSON(url, &list); err != nil {
+	if err := c.getJSON(ctx, url, &list); err != nil {
 		return LocationAreaList{}, err
 	}
 	return list, nil
@@ -59,11 +61,11 @@ func (c *Client) ListLocationAreas(pageURL *string) (LocationAreaList, error) {
 
 // GetLocationArea fetches the details of the location area with the given
 // name (or id). Responses are cached by URL.
-func (c *Client) GetLocationArea(name string) (LocationAreaDetail, error) {
+func (c *Client) GetLocationArea(ctx context.Context, name string) (LocationAreaDetail, error) {
 	areaURL := c.baseURL + "/location-area/" + url.PathEscape(name)
 
 	var detail LocationAreaDetail
-	if err := c.getJSON(areaURL, &detail); err != nil {
+	if err := c.getJSON(ctx, areaURL, &detail); err != nil {
 		return LocationAreaDetail{}, err
 	}
 	return detail, nil
@@ -71,14 +73,14 @@ func (c *Client) GetLocationArea(name string) (LocationAreaDetail, error) {
 
 // getJSON GETs url (using the cache) and decodes the JSON body into v. The
 // body is cached only after it has decoded successfully.
-func (c *Client) getJSON(url string, v any) error {
-	body, cached, err := c.get(url)
+func (c *Client) getJSON(ctx context.Context, url string, v any) error {
+	body, cached, err := c.get(ctx, url)
 	if err != nil {
 		return err
 	}
 
 	if err := json.Unmarshal(body, v); err != nil {
-		return err
+		return fmt.Errorf("decoding response from %s: %w", url, err)
 	}
 
 	if !cached {

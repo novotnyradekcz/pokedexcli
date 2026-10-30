@@ -1,11 +1,12 @@
 package repl
 
 import (
+	"context"
 	"fmt"
 	"sort"
 )
 
-func commandHelp(cfg *config, args ...string) error {
+func commandHelp(_ context.Context, cfg *config, args ...string) error {
 	// Sort so the output is the same on every run (map order is random).
 	keys := make([]string, 0, len(cfg.commands))
 	for key := range cfg.commands {

@@ -1,6 +1,7 @@
 package repl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
@@ -21,14 +22,14 @@ func catchChance(baseExperience int) float64 {
 	return catchDifficulty / (catchDifficulty + float64(baseExperience))
 }
 
-func commandCatch(cfg *config, args ...string) error {
+func commandCatch(ctx context.Context, cfg *config, args ...string) error {
 	if len(args) != 1 {
 		return errors.New("usage: catch <pokemon_name>")
 	}
 	name := args[0]
 
 	fmt.Fprintf(cfg.out, "Throwing a Pokeball at %s...\n", name)
-	pokemon, err := cfg.pokeapiClient.GetPokemon(name)
+	pokemon, err := cfg.pokeapiClient.GetPokemon(ctx, name)
 	if err != nil {
 		return describeAPIError(err, "pokemon", name)
 	}

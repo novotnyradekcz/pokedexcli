@@ -1,18 +1,19 @@
 package repl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
 
-func commandExplore(cfg *config, args ...string) error {
+func commandExplore(ctx context.Context, cfg *config, args ...string) error {
 	if len(args) != 1 {
 		return errors.New("usage: explore <area_name>")
 	}
 	name := args[0]
 
 	fmt.Fprintf(cfg.out, "Exploring %s...\n", name)
-	area, err := cfg.pokeapiClient.GetLocationArea(name)
+	area, err := cfg.pokeapiClient.GetLocationArea(ctx, name)
 	if err != nil {
 		return describeAPIError(err, "location area", name)
 	}

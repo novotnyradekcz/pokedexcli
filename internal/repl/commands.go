@@ -1,9 +1,13 @@
 package repl
 
+import "context"
+
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(cfg *config, args ...string) error
+	// callback runs the command. ctx is cancelled when the user interrupts it
+	// (Ctrl-C), so commands doing I/O must pass it on.
+	callback func(ctx context.Context, cfg *config, args ...string) error
 }
 
 func getCommands() map[string]cliCommand {

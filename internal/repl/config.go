@@ -1,6 +1,7 @@
 package repl
 
 import (
+	"context"
 	"io"
 
 	"github.com/novotnyradekcz/pokedexcli/internal/pokeapi"
@@ -10,9 +11,9 @@ import (
 // API is the part of the PokeAPI client that the commands use. It is defined
 // here, where it is consumed, so tests can substitute a fake.
 type API interface {
-	ListLocationAreas(pageURL *string) (pokeapi.LocationAreaList, error)
-	GetLocationArea(name string) (pokeapi.LocationAreaDetail, error)
-	GetPokemon(name string) (pokeapi.Pokemon, error)
+	ListLocationAreas(ctx context.Context, pageURL *string) (pokeapi.LocationAreaList, error)
+	GetLocationArea(ctx context.Context, name string) (pokeapi.LocationAreaDetail, error)
+	GetPokemon(ctx context.Context, name string) (pokeapi.Pokemon, error)
 }
 
 // config is the state shared by all commands.

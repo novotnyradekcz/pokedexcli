@@ -1,6 +1,7 @@
 package repl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -8,7 +9,7 @@ import (
 	"github.com/novotnyradekcz/pokedexcli/internal/pokeapi"
 )
 
-func commandInspect(cfg *config, args ...string) error {
+func commandInspect(_ context.Context, cfg *config, args ...string) error {
 	if len(args) != 1 {
 		return errors.New("usage: inspect <pokemon_name>")
 	}
